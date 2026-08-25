@@ -1,4 +1,4 @@
 {
-  "summary": "Creating pkg/meshery/client.go for Meshery REST API client interaction in meshery-mcp-server",
-  "updatedAt": "2026-08-23T19:36:07.467629049Z"
+  "summary": "Updating pkg/meshery/client.go with Bearer token authentication support for Issue #30",
+  "updatedAt": "2026-08-25T17:09:39.003002409Z"
 }

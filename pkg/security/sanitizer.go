@@ -3,47 +3,66 @@ package security
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"strings"
 )
 
 const RedactedPlaceholder = "[REDACTED_SECRET]"
 
-// exactSensitiveKeys holds key tokens to scrub (case-insensitive)
+// Sensitive key patterns to match accurately.
 var exactSensitiveKeys = map[string]bool{
 	"token":          true,
 	"password":       true,
 	"secret":         true,
+	"private_key":    true,
 	"kubeconfig":     true,
+	"auth_token":     true,
+	"authtoken":      true,
 	"api_key":        true,
 	"apikey":         true,
-	"private_key":    true,
+	"access_token":   true,
+	"accesstoken":    true,
+	"pass":           true,
 	"session":        true,
 	"session_cookie": true,
 	"authorization":  true,
 }
 
-// allowedExceptions prevents false-positive over-redaction of non-sensitive keys (e.g., author)
+// Exceptions that should NOT be redacted despite matching substrings
 var allowedExceptions = map[string]bool{
-	"author":     true,
-	"authority":  true,
-	"authorized": true,
-	"token_type": true,
+	"author":       true,
+	"authority":    true,
+	"authorized":   true,
+	"token_type":   true,
+	"passthrough":  true,
+	"pass_through": true,
 }
 
-// SanitizeMap takes a generic map or payload structure and returns a sanitized deep-copy.
+// SanitizeMap deeply copies and redacts sensitive information from map hierarchies.
 func SanitizeMap(input map[string]interface{}) map[string]interface{} {
 	if input == nil {
 		return nil
 	}
+
 	result := make(map[string]interface{}, len(input))
+
 	for k, v := range input {
 		if isSensitiveKey(k) {
 			result[k] = RedactedPlaceholder
-		} else {
-			result[k] = sanitizeValue(v)
+			continue
+		}
+
+		switch val := v.(type) {
+		case map[string]interface{}:
+			result[k] = SanitizeMap(val)
+		case []interface{}:
+			result[k] = sanitizeSlice(val)
+		case string:
+			result[k] = SanitizeString(val)
+		default:
+			result[k] = v
 		}
 	}
+
 	return result
 }
 
@@ -55,7 +74,6 @@ func SanitizeJSON(rawJSON []byte) ([]byte, error) {
 
 	var data interface{}
 	if err := json.Unmarshal(rawJSON, &data); err != nil {
-		// Fallback to string-based error path redaction for non-JSON or malformed payloads
 		sanitizedStr := SanitizeString(string(rawJSON))
 		return []byte(sanitizedStr), nil
 	}
@@ -64,22 +82,43 @@ func SanitizeJSON(rawJSON []byte) ([]byte, error) {
 	return json.Marshal(sanitizedData)
 }
 
-// SanitizeString scrubs sensitive token or credential patterns from error messages and logs.
+// SanitizeString scrubs sensitive token or credential patterns from error messages, JSON strings, and logs.
 func SanitizeString(input string) string {
 	if input == "" {
 		return input
 	}
 	result := input
+
+	// List of key variations to check (raw key and JSON-quoted key)
 	for key := range exactSensitiveKeys {
-		for _, sep := range []string{"=", ": ", ":"} {
-			pattern := key + sep
-			if idx := strings.Index(strings.ToLower(result), pattern); idx != -1 {
-				valStart := idx + len(pattern)
-				valEnd := strings.IndexAny(result[valStart:], " \t\n\r\"',;")
-				if valEnd == -1 {
-					result = result[:valStart] + RedactedPlaceholder
-				} else {
-					result = result[:valStart] + RedactedPlaceholder + result[valStart+valEnd:]
+		keyVariations := []string{key, fmt.Sprintf("\"%s\"", key)}
+		for _, k := range keyVariations {
+			for _, sep := range []string{"=", ": ", ":"} {
+				pattern := k + sep
+				for {
+					lowerResult := strings.ToLower(result)
+					idx := strings.Index(lowerResult, strings.ToLower(pattern))
+					if idx == -1 {
+						break
+					}
+					valStart := idx + len(pattern)
+					// Skip leading quotes if JSON string format: "key":"value"
+					quoteTrimmed := false
+					if valStart < len(result) && result[valStart] == '"' {
+						valStart++
+						quoteTrimmed = true
+					}
+					valEnd := strings.IndexAny(result[valStart:], " \t\n\r\"',;}")
+					if valEnd == -1 {
+						result = result[:valStart] + RedactedPlaceholder
+						break
+					} else {
+						endIdx := valStart + valEnd
+						if quoteTrimmed && endIdx < len(result) && result[endIdx] == '"' {
+							endIdx++
+						}
+						result = result[:valStart] + RedactedPlaceholder + result[endIdx:]
+					}
 				}
 			}
 		}
@@ -104,34 +143,36 @@ func isSensitiveKey(key string) bool {
 	return false
 }
 
-// Helper: recursively sanitize map, slice, array, or typed values
-func sanitizeValue(v interface{}) interface{} {
-	if v == nil {
+func sanitizeSlice(s []interface{}) []interface{} {
+	if s == nil {
 		return nil
 	}
 
-	val := reflect.ValueOf(v)
-	switch val.Kind() {
-	case reflect.Map:
-		outMap := make(map[string]interface{})
-		for _, k := range val.MapKeys() {
-			keyStr := fmt.Sprintf("%v", k.Interface())
-			elemVal := val.MapIndex(k).Interface()
-			if isSensitiveKey(keyStr) {
-				outMap[keyStr] = RedactedPlaceholder
-			} else {
-				outMap[keyStr] = sanitizeValue(elemVal)
-			}
+	result := make([]interface{}, len(s))
+	for i, item := range s {
+		switch child := item.(type) {
+		case map[string]interface{}:
+			result[i] = SanitizeMap(child)
+		case []interface{}:
+			result[i] = sanitizeSlice(child)
+		case string:
+			result[i] = SanitizeString(child)
+		default:
+			result[i] = item
 		}
-		return outMap
+	}
 
-	case reflect.Slice, reflect.Array:
-		outSlice := make([]interface{}, val.Len())
-		for i := 0; i < val.Len(); i++ {
-			outSlice[i] = sanitizeValue(val.Index(i).Interface())
-		}
-		return outSlice
+	return result
+}
 
+func sanitizeValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		return SanitizeMap(val)
+	case []interface{}:
+		return sanitizeSlice(val)
+	case string:
+		return SanitizeString(val)
 	default:
 		return v
 	}
