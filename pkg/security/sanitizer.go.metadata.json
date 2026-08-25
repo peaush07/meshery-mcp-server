@@ -1,4 +1,0 @@
-{
-  "summary": "Updating SanitizeString in pkg/security/sanitizer.go to handle JSON quoted keys and repeated key matches",
-  "updatedAt": "2026-08-25T17:09:44.441338364Z"
-}
