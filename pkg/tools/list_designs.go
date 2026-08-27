@@ -36,7 +36,7 @@ func (t *ListDesignsTool) Schema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"page": map[string]interface{}{
 				"type":        "integer",
-				"description": "Page number for paginated results (default: 1).",
+				"description": "Page number for paginated results (default: 0, 0-indexed).",
 			},
 			"pageSize": map[string]interface{}{
 				"type":        "integer",
@@ -52,7 +52,7 @@ func (t *ListDesignsTool) Schema() map[string]interface{} {
 
 // Execute queries Meshery API, validates pagination bounds, and returns response-boundary sanitized design objects.
 func (t *ListDesignsTool) Execute(ctx context.Context, params map[string]interface{}) (map[string]interface{}, error) {
-	page := 1
+	page := 0
 	pageSize := 10
 	search := ""
 
@@ -74,9 +74,9 @@ func (t *ListDesignsTool) Execute(ctx context.Context, params map[string]interfa
 		}
 	}
 
-	// Clamp edge-case parameters safely
-	if page < 1 {
-		page = 1
+	// Clamp edge-case parameters safely (0-indexed Meshery Server pager)
+	if page < 0 {
+		page = 0
 	}
 	if pageSize < 1 {
 		pageSize = 10

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/meshery-extensions/meshery-mcp-server/pkg/security"
@@ -25,7 +26,7 @@ type mesheryClient struct {
 	httpClient *http.Client
 }
 
-// NewClient returns a new Meshery API client instance with optional Bearer token authentication.
+// NewClient returns a new Meshery API client instance with optional Bearer token/cookie authentication.
 func NewClient(baseURL string, token ...string) Client {
 	if baseURL == "" {
 		baseURL = "http://localhost:9081"
@@ -39,11 +40,15 @@ func NewClient(baseURL string, token ...string) Client {
 		token:   t,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				// Prevent automatic redirects to HTML provider login pages on unauthenticated API calls
+				return http.ErrUseLastResponse
+			},
 		},
 	}
 }
 
-// ListDesigns retrieves available design patterns from Meshery Server /api/pattern endpoint with pagination & search.
+// ListDesigns retrieves available design patterns from Meshery Server /api/pattern endpoint with 0-indexed pagination & search.
 func (c *mesheryClient) ListDesigns(ctx context.Context, page, pageSize int, search string) ([]map[string]interface{}, int, error) {
 	baseURL := fmt.Sprintf("%s/api/pattern", c.baseURL)
 	u, err := url.Parse(baseURL)
@@ -52,7 +57,7 @@ func (c *mesheryClient) ListDesigns(ctx context.Context, page, pageSize int, sea
 	}
 
 	q := u.Query()
-	if page > 0 {
+	if page >= 0 {
 		q.Set("page", strconv.Itoa(page))
 	}
 	if pageSize > 0 {
@@ -69,7 +74,12 @@ func (c *mesheryClient) ListDesigns(ctx context.Context, page, pageSize int, sea
 	}
 
 	if c.token != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
+		if strings.HasPrefix(c.token, "Bearer ") {
+			req.Header.Set("Authorization", c.token)
+		} else {
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
+			req.AddCookie(&http.Cookie{Name: "token", Value: c.token})
+		}
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -78,6 +88,11 @@ func (c *mesheryClient) ListDesigns(ctx context.Context, page, pageSize int, sea
 		return nil, 0, fmt.Errorf("failed to execute list_designs HTTP query: %s", sanitizedErr)
 	}
 	defer resp.Body.Close()
+
+	// Check for auth redirects (302 Found or 307 Temporary Redirect to /provider)
+	if resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusTemporaryRedirect || resp.StatusCode == http.StatusSeeOther || resp.StatusCode == http.StatusUnauthorized {
+		return nil, 0, fmt.Errorf("unauthenticated request: Meshery Server returned status %d (authentication required)", resp.StatusCode)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

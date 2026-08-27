@@ -81,7 +81,7 @@ func TestListDesignsTool_Execute_ParameterClamping(t *testing.T) {
 
 	tool := NewListDesignsTool(mockClient)
 
-	// Test negative page and oversized pageSize clamping
+	// Test negative page and oversized pageSize clamping (0-indexed Meshery Server pager)
 	_, err := tool.Execute(context.Background(), map[string]interface{}{
 		"page":     -5,
 		"pageSize": 500,
@@ -90,8 +90,8 @@ func TestListDesignsTool_Execute_ParameterClamping(t *testing.T) {
 		t.Fatalf("unexpected error executing list_designs tool: %v", err)
 	}
 
-	if mockClient.lastPage != 1 {
-		t.Errorf("expected clamped page 1, got %d", mockClient.lastPage)
+	if mockClient.lastPage != 0 {
+		t.Errorf("expected clamped page 0 (0-indexed), got %d", mockClient.lastPage)
 	}
 
 	if mockClient.lastPageSize != 100 {
