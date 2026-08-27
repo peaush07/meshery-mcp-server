@@ -76,6 +76,15 @@ func TestSanitizeJSON_ValidJSONQuoting(t *testing.T) {
 	}
 }
 
+func TestSanitizeString_InvalidBracedJSON(t *testing.T) {
+	malformedInput := `{"token": "secret-123", invalid_syntax}`
+
+	sanitized := SanitizeString(malformedInput)
+	if strings.Contains(sanitized, "secret-123") {
+		t.Errorf("expected secret-123 to be redacted in malformed JSON string, got: %s", sanitized)
+	}
+}
+
 func TestSanitizeMap_SecretaryNotRedacted(t *testing.T) {
 	input := map[string]interface{}{
 		"secretary":     "john_doe",
