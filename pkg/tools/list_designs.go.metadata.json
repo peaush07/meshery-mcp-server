@@ -1,4 +1,4 @@
 {
-  "summary": "Creating pkg/tools/list_designs.go implementing Issue #30 list_designs read-only MCP tool",
-  "updatedAt": "2026-08-23T19:36:18.174881403Z"
+  "summary": "Exposing page, pageSize, search properties in Schema() and passing to client in pkg/tools/list_designs.go",
+  "updatedAt": "2026-08-27T04:53:49.863185907Z"
 }

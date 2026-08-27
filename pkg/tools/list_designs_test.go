@@ -11,11 +11,11 @@ type mockMesheryClient struct {
 	err     error
 }
 
-func (m *mockMesheryClient) ListDesigns(ctx context.Context) ([]map[string]interface{}, error) {
+func (m *mockMesheryClient) ListDesigns(ctx context.Context, page, pageSize int, search string) ([]map[string]interface{}, int, error) {
 	if m.err != nil {
-		return nil, m.err
+		return nil, 0, m.err
 	}
-	return m.designs, nil
+	return m.designs, len(m.designs), nil
 }
 
 func TestListDesignsTool_Execute_Success(t *testing.T) {
@@ -30,7 +30,11 @@ func TestListDesignsTool_Execute_Success(t *testing.T) {
 	}
 
 	tool := NewListDesignsTool(mockClient)
-	result, err := tool.Execute(context.Background(), nil)
+	result, err := tool.Execute(context.Background(), map[string]interface{}{
+		"page":     1,
+		"pageSize": 10,
+		"search":   "K8s",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error executing list_designs tool: %v", err)
 	}
