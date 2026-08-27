@@ -7,8 +7,9 @@ import (
 	"testing"
 )
 
-func TestMesheryClient_ListDesigns_QueryStringAndAuth(t *testing.T) {
+func TestMesheryClient_ListDesigns_QueryStringAndDualCookies(t *testing.T) {
 	var capturedPage, capturedPageSize, capturedSearch, capturedAuth string
+	var capturedTokenCookie, capturedProviderCookie *http.Cookie
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedPage = r.URL.Query().Get("page")
@@ -16,13 +17,16 @@ func TestMesheryClient_ListDesigns_QueryStringAndAuth(t *testing.T) {
 		capturedSearch = r.URL.Query().Get("search")
 		capturedAuth = r.Header.Get("Authorization")
 
+		capturedTokenCookie, _ = r.Cookie("token")
+		capturedProviderCookie, _ = r.Cookie("meshery-provider")
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"total_count": 1, "patterns": [{"id": "p-1", "name": "K8s-Pattern"}]}`))
 	}))
 	defer ts.Close()
 
-	client := NewClient(ts.URL, "test-bearer-token")
+	client := NewClient(ts.URL, "test-bearer-token", "Meshery")
 
 	designs, totalCount, err := client.ListDesigns(context.Background(), 2, 25, "kubernetes")
 	if err != nil {
@@ -51,5 +55,13 @@ func TestMesheryClient_ListDesigns_QueryStringAndAuth(t *testing.T) {
 
 	if capturedAuth != "Bearer test-bearer-token" {
 		t.Errorf("expected Authorization header Bearer test-bearer-token, got %s", capturedAuth)
+	}
+
+	if capturedTokenCookie == nil || capturedTokenCookie.Value != "test-bearer-token" {
+		t.Errorf("expected token cookie test-bearer-token, got %v", capturedTokenCookie)
+	}
+
+	if capturedProviderCookie == nil || capturedProviderCookie.Value != "Meshery" {
+		t.Errorf("expected meshery-provider cookie Meshery, got %v", capturedProviderCookie)
 	}
 }

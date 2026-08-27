@@ -23,21 +23,29 @@ type Client interface {
 type mesheryClient struct {
 	baseURL    string
 	token      string
+	provider   string
 	httpClient *http.Client
 }
 
-// NewClient returns a new Meshery API client instance with optional Bearer token/cookie authentication.
-func NewClient(baseURL string, token ...string) Client {
+// NewClient returns a new Meshery API client instance with optional token and provider authentication values.
+// Usage: NewClient(baseURL, [token], [provider])
+func NewClient(baseURL string, args ...string) Client {
 	if baseURL == "" {
 		baseURL = "http://localhost:9081"
 	}
 	t := ""
-	if len(token) > 0 {
-		t = token[0]
+	p := "None"
+	if len(args) > 0 {
+		t = args[0]
 	}
+	if len(args) > 1 && args[1] != "" {
+		p = args[1]
+	}
+
 	return &mesheryClient{
-		baseURL: baseURL,
-		token:   t,
+		baseURL:  baseURL,
+		token:    t,
+		provider: p,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -74,12 +82,12 @@ func (c *mesheryClient) ListDesigns(ctx context.Context, page, pageSize int, sea
 	}
 
 	if c.token != "" {
-		if strings.HasPrefix(c.token, "Bearer ") {
-			req.Header.Set("Authorization", c.token)
-		} else {
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
-			req.AddCookie(&http.Cookie{Name: "token", Value: c.token})
-		}
+		cleanToken := strings.TrimPrefix(c.token, "Bearer ")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", cleanToken))
+
+		// Send both token and meshery-provider cookies required for full Meshery session auth
+		req.AddCookie(&http.Cookie{Name: "token", Value: cleanToken})
+		req.AddCookie(&http.Cookie{Name: "meshery-provider", Value: c.provider})
 	}
 
 	resp, err := c.httpClient.Do(req)
