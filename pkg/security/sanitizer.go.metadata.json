@@ -1,0 +1,4 @@
+{
+  "summary": "Updating SanitizeString in pkg/security/sanitizer.go for complete Authorization Bearer boundary redaction",
+  "updatedAt": "2026-08-27T04:52:20.912122324Z"
+}
