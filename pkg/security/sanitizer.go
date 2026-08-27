@@ -4,7 +4,6 @@ package security
 
 import (
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"strings"
 )
@@ -17,23 +16,30 @@ const CircularPlaceholder = "[CIRCULAR_REFERENCE]"
 
 const maxRecursionDepth = 64
 
-// Exact sensitive key names that trigger redaction.
+// Exact sensitive key names that trigger redaction, including Meshery/Kubeconfig secret data keys.
 var exactSensitiveKeys = map[string]bool{
-	"token":          true,
-	"password":       true,
-	"secret":         true,
-	"private_key":    true,
-	"kubeconfig":     true,
-	"auth_token":     true,
-	"authtoken":      true,
-	"api_key":        true,
-	"apikey":         true,
-	"access_token":   true,
-	"accesstoken":    true,
-	"pass":           true,
-	"session":        true,
-	"session_cookie": true,
-	"authorization":  true,
+	"token":                      true,
+	"password":                   true,
+	"secret":                     true,
+	"private_key":                true,
+	"kubeconfig":                 true,
+	"auth_token":                 true,
+	"authtoken":                  true,
+	"api_key":                    true,
+	"apikey":                     true,
+	"access_token":               true,
+	"accesstoken":                true,
+	"pass":                       true,
+	"session":                    true,
+	"session_cookie":             true,
+	"authorization":              true,
+	"client-key-data":            true,
+	"client_key_data":            true,
+	"certificate-authority-data": true,
+	"certificate_authority_data": true,
+	"data":                       true,
+	"stringdata":                 true,
+	"string_data":                true,
 }
 
 // Exceptions that must NOT be redacted despite containing common substrings.
@@ -115,60 +121,56 @@ func SanitizeJSON(rawJSON []byte) ([]byte, error) {
 }
 
 // SanitizeString scrubs sensitive token or credential patterns from error messages and log outputs.
-// It formats Authorization Bearer values cleanly as "Bearer [REDACTED_SECRET]" without leaking token contents.
+// If input is a JSON string payload, it routes through SanitizeJSON guaranteeing valid JSON output.
 func SanitizeString(input string) string {
 	if input == "" {
 		return input
 	}
+
+	trimmed := strings.TrimSpace(input)
+	if (strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) ||
+		(strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
+		if sanitizedBytes, err := SanitizeJSON([]byte(trimmed)); err == nil {
+			return string(sanitizedBytes)
+		}
+	}
+
 	result := input
 
 	for key := range exactSensitiveKeys {
-		keyVariations := []string{key, fmt.Sprintf("\"%s\"", key)}
-		for _, k := range keyVariations {
-			for _, sep := range []string{"=", ": ", ":"} {
-				pattern := k + sep
-				searchIdx := 0
-				for {
-					if searchIdx >= len(result) {
-						break
-					}
-					lowerResult := strings.ToLower(result[searchIdx:])
-					idx := strings.Index(lowerResult, strings.ToLower(pattern))
-					if idx == -1 {
-						break
-					}
-					realIdx := searchIdx + idx
-					valStart := realIdx + len(pattern)
-					remainder := result[valStart:]
-
-					hasQuote := false
-					if len(remainder) > 0 && remainder[0] == '"' {
-						hasQuote = true
-						valStart++
-						remainder = result[valStart:]
-					}
-
-					prefix := ""
-					if strings.HasPrefix(strings.ToLower(remainder), "bearer ") {
-						prefix = "Bearer "
-						valStart += len("bearer ")
-					}
-
-					valEnd := strings.IndexAny(result[valStart:], " \t\n\r\"',;}")
-					var endIdx int
-					if valEnd == -1 {
-						endIdx = len(result)
-					} else {
-						endIdx = valStart + valEnd
-						if hasQuote && endIdx < len(result) && result[endIdx] == '"' {
-							endIdx++
-						}
-					}
-
-					replacement := prefix + RedactedPlaceholder
-					result = result[:realIdx+len(pattern)] + replacement + result[endIdx:]
-					searchIdx = realIdx + len(pattern) + len(replacement)
+		for _, sep := range []string{"=", ": ", ":"} {
+			pattern := key + sep
+			searchIdx := 0
+			for {
+				if searchIdx >= len(result) {
+					break
 				}
+				lowerResult := strings.ToLower(result[searchIdx:])
+				idx := strings.Index(lowerResult, strings.ToLower(pattern))
+				if idx == -1 {
+					break
+				}
+				realIdx := searchIdx + idx
+				valStart := realIdx + len(pattern)
+				remainder := result[valStart:]
+
+				prefix := ""
+				if strings.HasPrefix(strings.ToLower(remainder), "bearer ") {
+					prefix = "Bearer "
+					valStart += len("bearer ")
+				}
+
+				valEnd := strings.IndexAny(result[valStart:], " \t\n\r\"',;}")
+				var endIdx int
+				if valEnd == -1 {
+					endIdx = len(result)
+				} else {
+					endIdx = valStart + valEnd
+				}
+
+				replacement := prefix + RedactedPlaceholder
+				result = result[:valStart] + replacement + result[endIdx:]
+				searchIdx = valStart + len(replacement) + 1
 			}
 		}
 	}

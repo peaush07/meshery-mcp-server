@@ -27,6 +27,55 @@ func TestSanitizeMap_SensitiveKeys(t *testing.T) {
 	}
 }
 
+func TestSanitizeMap_KubeconfigAndSecretData(t *testing.T) {
+	input := map[string]interface{}{
+		"client-key-data":            "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQ==",
+		"certificate-authority-data": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t",
+		"data":                       map[string]interface{}{"db_pass": "secret123"},
+		"stringData":                 map[string]interface{}{"api_token": "secret456"},
+		"normal_field":               "normal_value",
+	}
+
+	sanitized := SanitizeMap(input)
+
+	if sanitized["client-key-data"] != RedactedPlaceholder {
+		t.Errorf("expected client-key-data to be redacted, got %v", sanitized["client-key-data"])
+	}
+	if sanitized["certificate-authority-data"] != RedactedPlaceholder {
+		t.Errorf("expected certificate-authority-data to be redacted, got %v", sanitized["certificate-authority-data"])
+	}
+	if sanitized["data"] != RedactedPlaceholder {
+		t.Errorf("expected data to be redacted, got %v", sanitized["data"])
+	}
+	if sanitized["stringData"] != RedactedPlaceholder {
+		t.Errorf("expected stringData to be redacted, got %v", sanitized["stringData"])
+	}
+	if sanitized["normal_field"] != "normal_value" {
+		t.Errorf("expected normal_field to be untouched, got %v", sanitized["normal_field"])
+	}
+}
+
+func TestSanitizeJSON_ValidJSONQuoting(t *testing.T) {
+	rawJSON := []byte(`{"token":"abc123","name":"bookinfo"}`)
+
+	sanitizedBytes, err := SanitizeJSON(rawJSON)
+	if err != nil {
+		t.Fatalf("unexpected error sanitizing JSON: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(sanitizedBytes, &parsed); err != nil {
+		t.Fatalf("sanitized output is not valid JSON: %s (err: %v)", string(sanitizedBytes), err)
+	}
+
+	if parsed["token"] != RedactedPlaceholder {
+		t.Errorf("expected token to be %s, got %v", RedactedPlaceholder, parsed["token"])
+	}
+	if parsed["name"] != "bookinfo" {
+		t.Errorf("expected name to be bookinfo, got %v", parsed["name"])
+	}
+}
+
 func TestSanitizeMap_SecretaryNotRedacted(t *testing.T) {
 	input := map[string]interface{}{
 		"secretary":     "john_doe",
@@ -82,8 +131,9 @@ func TestSanitizeString_QuotedJSONAuthorization(t *testing.T) {
 		t.Errorf("raw secret token leaked in quoted JSON string: %s", sanitized)
 	}
 
-	if !strings.Contains(sanitized, "Bearer "+RedactedPlaceholder) {
-		t.Errorf("expected Bearer placeholder in JSON string, got: %s", sanitized)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(sanitized), &parsed); err != nil {
+		t.Fatalf("sanitized output is not valid JSON: %s (err: %v)", sanitized, err)
 	}
 }
 

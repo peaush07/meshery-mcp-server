@@ -2,7 +2,6 @@ package errors
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 )
 
@@ -30,12 +29,28 @@ func TestMeshKitErrors_JSONWireFormat(t *testing.T) {
 		t.Fatalf("failed to marshal MeshKit error to JSON: %v", err)
 	}
 
-	jsonStr := string(rawJSON)
-	if !strings.Contains(jsonStr, ErrUnauthenticatedCode) {
-		t.Errorf("expected JSON wire format to contain error code %s, got: %s", ErrUnauthenticatedCode, jsonStr)
+	var wire struct {
+		Code                 string   `json:"Code"`
+		Severity             int      `json:"Severity"`
+		ShortDescription     []string `json:"ShortDescription"`
+		LongDescription      []string `json:"LongDescription"`
+		ProbableCause        []string `json:"ProbableCause"`
+		SuggestedRemediation []string `json:"SuggestedRemediation"`
 	}
 
-	if !strings.Contains(jsonStr, "Authentication Failure") {
-		t.Errorf("expected JSON wire format to contain short description, got: %s", jsonStr)
+	if err := json.Unmarshal(rawJSON, &wire); err != nil {
+		t.Fatalf("failed to unmarshal MeshKit error JSON into typed struct: %v", err)
+	}
+
+	if wire.Code != ErrUnauthenticatedCode {
+		t.Errorf("expected Code %s, got %s", ErrUnauthenticatedCode, wire.Code)
+	}
+
+	if len(wire.ShortDescription) == 0 || wire.ShortDescription[0] != "Authentication Failure" {
+		t.Errorf("expected ShortDescription array with Authentication Failure, got: %v", wire.ShortDescription)
+	}
+
+	if len(wire.SuggestedRemediation) == 0 {
+		t.Errorf("expected SuggestedRemediation array to be non-empty, got: %v", wire.SuggestedRemediation)
 	}
 }
