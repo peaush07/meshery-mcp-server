@@ -1,3 +1,4 @@
+// Package tools provides Model Context Protocol (MCP) tool contracts and execution handlers.
 package tools
 
 import (
@@ -13,19 +14,22 @@ type ListDesignsTool struct {
 	client meshery.Client
 }
 
-// NewListDesignsTool constructs a new ListDesignsTool instance.
+// NewListDesignsTool constructs a new ListDesignsTool instance with the provided Meshery client.
 func NewListDesignsTool(client meshery.Client) *ListDesignsTool {
 	return &ListDesignsTool{client: client}
 }
 
+// Name returns the MCP tool identifier.
 func (t *ListDesignsTool) Name() string {
 	return "list_designs"
 }
 
+// Description returns a human-readable explanation of what the tool accomplishes.
 func (t *ListDesignsTool) Description() string {
 	return "Lists available Meshery cloud-native design patterns and infrastructure specifications with optional pagination and search filters."
 }
 
+// Schema returns the JSON schema definition for tool input arguments.
 func (t *ListDesignsTool) Schema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
@@ -36,7 +40,7 @@ func (t *ListDesignsTool) Schema() map[string]interface{} {
 			},
 			"pageSize": map[string]interface{}{
 				"type":        "integer",
-				"description": "Number of design patterns per page (default: 10).",
+				"description": "Number of design patterns per page (default: 10, max: 100).",
 			},
 			"search": map[string]interface{}{
 				"type":        "string",
@@ -46,7 +50,7 @@ func (t *ListDesignsTool) Schema() map[string]interface{} {
 	}
 }
 
-// Execute queries Meshery API and returns response-boundary sanitized design objects.
+// Execute queries Meshery API, validates pagination bounds, and returns response-boundary sanitized design objects.
 func (t *ListDesignsTool) Execute(ctx context.Context, params map[string]interface{}) (map[string]interface{}, error) {
 	page := 1
 	pageSize := 10
@@ -68,6 +72,17 @@ func (t *ListDesignsTool) Execute(ctx context.Context, params map[string]interfa
 		if s, ok := params["search"].(string); ok {
 			search = s
 		}
+	}
+
+	// Clamp edge-case parameters safely
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
 	designs, totalCount, err := t.client.ListDesigns(ctx, page, pageSize, search)
