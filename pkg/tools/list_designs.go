@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/meshery-extensions/meshery-mcp-server/pkg/meshery"
+	"github.com/meshery-extensions/meshery-mcp-server/internal/meshery"
 	"github.com/meshery-extensions/meshery-mcp-server/pkg/security"
 )
 
@@ -14,7 +14,7 @@ type ListDesignsTool struct {
 	client meshery.Client
 }
 
-// NewListDesignsTool constructs a new ListDesignsTool instance with the provided Meshery client.
+// NewListDesignsTool constructs a new ListDesignsTool instance with the provided shared Meshery client.
 func NewListDesignsTool(client meshery.Client) *ListDesignsTool {
 	return &ListDesignsTool{client: client}
 }
