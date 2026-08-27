@@ -1,3 +1,4 @@
+// Package errors provides canonical MeshKit wire-format error constructors for Meshery MCP Server.
 package errors
 
 import (
@@ -6,9 +7,12 @@ import (
 
 // Error codes for Meshery MCP Server
 const (
+	// ErrUnauthenticatedCode indicates missing or invalid Meshery Server authentication credentials.
 	ErrUnauthenticatedCode = "1001-MCP"
-	ErrUpstreamFailedCode  = "1002-MCP"
-	ErrSchemaInvalidCode   = "1003-MCP"
+	// ErrUpstreamFailedCode indicates upstream HTTP API connection failures to Meshery Server.
+	ErrUpstreamFailedCode = "1002-MCP"
+	// ErrSchemaInvalidCode indicates invalid input tool arguments failing JSON schema validation.
+	ErrSchemaInvalidCode = "1003-MCP"
 )
 
 // ErrUnauthenticated creates a canonical MeshKit error for authentication failures.
