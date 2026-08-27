@@ -43,6 +43,8 @@ var allowedExceptions = map[string]bool{
 	"authority":     true,
 	"authorized":    true,
 	"token_type":    true,
+	"token_count":   true,
+	"tokencount":    true,
 	"passthrough":   true,
 	"pass_through":  true,
 	"password_hint": true,
@@ -125,13 +127,18 @@ func SanitizeString(input string) string {
 		for _, k := range keyVariations {
 			for _, sep := range []string{"=", ": ", ":"} {
 				pattern := k + sep
+				searchIdx := 0
 				for {
-					lowerResult := strings.ToLower(result)
+					if searchIdx >= len(result) {
+						break
+					}
+					lowerResult := strings.ToLower(result[searchIdx:])
 					idx := strings.Index(lowerResult, strings.ToLower(pattern))
 					if idx == -1 {
 						break
 					}
-					valStart := idx + len(pattern)
+					realIdx := searchIdx + idx
+					valStart := realIdx + len(pattern)
 					remainder := result[valStart:]
 
 					hasQuote := false
@@ -148,21 +155,19 @@ func SanitizeString(input string) string {
 					}
 
 					valEnd := strings.IndexAny(result[valStart:], " \t\n\r\"',;}")
+					var endIdx int
 					if valEnd == -1 {
-						replacement := prefix + RedactedPlaceholder
-						if hasQuote {
-							replacement += "\""
-						}
-						result = result[:idx+len(pattern)] + replacement
-						break
+						endIdx = len(result)
 					} else {
-						endIdx := valStart + valEnd
+						endIdx = valStart + valEnd
 						if hasQuote && endIdx < len(result) && result[endIdx] == '"' {
 							endIdx++
 						}
-						replacement := prefix + RedactedPlaceholder
-						result = result[:idx+len(pattern)] + replacement + result[endIdx:]
 					}
+
+					replacement := prefix + RedactedPlaceholder
+					result = result[:realIdx+len(pattern)] + replacement + result[endIdx:]
+					searchIdx = realIdx + len(pattern) + len(replacement)
 				}
 			}
 		}
@@ -180,7 +185,6 @@ func isSensitiveKey(key string) bool {
 		return true
 	}
 
-	// Tokenize key by standard delimiters: _, -, ., @, /, space
 	tokens := strings.FieldsFunc(lower, func(r rune) bool {
 		return r == '_' || r == '-' || r == '.' || r == '@' || r == '/' || r == ' '
 	})
