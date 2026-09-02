@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+type captureTransport struct {
+	capturedReq *http.Request
+}
+
+func (ct *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	ct.capturedReq = req
+	rec := httptest.NewRecorder()
+	rec.Header().Set("Content-Type", "application/json")
+	rec.WriteHeader(http.StatusOK)
+	_, _ = rec.WriteString(`{"totalCount": 1, "patterns": []}`)
+	return rec.Result(), nil
+}
+
 func TestMesheryClient_ListDesigns_QueryStringAndDualCookies(t *testing.T) {
 	var capturedPage, capturedPageSize, capturedSearch, capturedAuth string
 	var capturedTokenCookie, capturedProviderCookie *http.Cookie
@@ -70,45 +83,35 @@ func TestMesheryClient_ListDesigns_QueryStringAndDualCookies(t *testing.T) {
 }
 
 func TestMesheryClient_ListDesigns_HTTPCleartextCredentialWithholding(t *testing.T) {
-	var capturedAuth string
-	var capturedTokenCookie *http.Cookie
+	ct := &captureTransport{}
+	clientInterface := NewClient("http://remote-unencrypted-server.internal", "secret-token-123", "Meshery")
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedAuth = r.Header.Get("Authorization")
-		capturedTokenCookie, _ = r.Cookie("token")
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"totalCount": 1, "patterns": []}`))
-	}))
-	defer ts.Close()
-
-	// Replace loopback host with non-loopback remote HTTP host URL string for testing
-	// client construction with non-loopback cleartext HTTP endpoint
-	remoteHTTPURL := strings.Replace(ts.URL, "127.0.0.1", "remote-unencrypted-server.internal", 1)
-
-	client := NewClient(remoteHTTPURL, "secret-token-123", "Meshery")
-
-	// Call against mock transport directly overriding request URL hostname to simulate remote HTTP call
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, remoteHTTPURL+"/api/pattern", nil)
-	
-	// Verify that ListDesigns correctly checks loopback/HTTPS rules
-	if client != nil {
-		_ = req
+	if mc, ok := clientInterface.(*mesheryClient); ok {
+		mc.httpClient.Transport = ct
+	} else {
+		t.Fatalf("failed to cast Client interface to concrete *mesheryClient")
 	}
 
-	// Verify standard loopback client attaches credentials
-	loopbackClient := NewClient(ts.URL, "secret-token-123", "Meshery")
-	_, _, err := loopbackClient.ListDesigns(context.Background(), 0, 10, "")
+	_, _, err := clientInterface.ListDesigns(context.Background(), 0, 10, "")
 	if err != nil {
-		t.Fatalf("unexpected error executing loopback ListDesigns: %v", err)
+		t.Fatalf("unexpected error executing ListDesigns with mock capture transport: %v", err)
 	}
 
-	if capturedAuth != "Bearer secret-token-123" {
-		t.Errorf("expected loopback request to transmit authorization, got: %s", capturedAuth)
+	req := ct.capturedReq
+	if req == nil {
+		t.Fatalf("expected request to be captured by mock transport, got nil")
 	}
-	if capturedTokenCookie == nil || capturedTokenCookie.Value != "secret-token-123" {
-		t.Errorf("expected loopback request to attach token cookie, got: %v", capturedTokenCookie)
+
+	if auth := req.Header.Get("Authorization"); auth != "" {
+		t.Errorf("expected Authorization header to be withheld over cleartext HTTP, got: %s", auth)
+	}
+
+	if cookie, err := req.Cookie("token"); err != http.ErrNoCookie {
+		t.Errorf("expected token cookie to be withheld over cleartext HTTP, got: %v", cookie)
+	}
+
+	if cookie, err := req.Cookie("meshery-provider"); err != http.ErrNoCookie {
+		t.Errorf("expected meshery-provider cookie to be withheld over cleartext HTTP, got: %v", cookie)
 	}
 }
 
