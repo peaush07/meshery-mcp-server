@@ -121,7 +121,7 @@ func SanitizeJSON(rawJSON []byte) ([]byte, error) {
 }
 
 // SanitizeString scrubs sensitive token or credential patterns from error messages and log outputs.
-// If input is a JSON string payload, it routes through SanitizeJSON guaranteeing valid JSON output.
+// If input is valid JSON, it routes through SanitizeJSON. Malformed braced input falls back safely without recursion.
 func SanitizeString(input string) string {
 	if input == "" {
 		return input
@@ -130,16 +130,29 @@ func SanitizeString(input string) string {
 	trimmed := strings.TrimSpace(input)
 	if (strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) ||
 		(strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
-		if sanitizedBytes, err := SanitizeJSON([]byte(trimmed)); err == nil {
-			return string(sanitizedBytes)
+		if json.Valid([]byte(trimmed)) {
+			if sanitizedBytes, err := SanitizeJSON([]byte(trimmed)); err == nil {
+				return string(sanitizedBytes)
+			}
 		}
 	}
 
 	result := input
 
 	for key := range exactSensitiveKeys {
-		for _, sep := range []string{"=", ": ", ":"} {
-			pattern := key + sep
+		patterns := []string{
+			"\"" + key + "\": \"",
+			"\"" + key + "\":\"",
+			"\"" + key + "\": ",
+			"\"" + key + "\":",
+			"'" + key + "': '",
+			"'" + key + "':",
+			key + "= ",
+			key + "=",
+			key + ": ",
+			key + ":",
+		}
+		for _, pattern := range patterns {
 			searchIdx := 0
 			for {
 				if searchIdx >= len(result) {
@@ -153,6 +166,15 @@ func SanitizeString(input string) string {
 				realIdx := searchIdx + idx
 				valStart := realIdx + len(pattern)
 				remainder := result[valStart:]
+
+				hasQuote := false
+				if strings.HasSuffix(pattern, "\"") || strings.HasSuffix(pattern, "'") {
+					hasQuote = true
+				} else if len(remainder) > 0 && (remainder[0] == '"' || remainder[0] == '\'') {
+					hasQuote = true
+					valStart++
+					remainder = result[valStart:]
+				}
 
 				prefix := ""
 				if strings.HasPrefix(strings.ToLower(remainder), "bearer ") {
@@ -169,7 +191,15 @@ func SanitizeString(input string) string {
 				}
 
 				replacement := prefix + RedactedPlaceholder
-				result = result[:valStart] + replacement + result[endIdx:]
+				if hasQuote {
+					if endIdx < len(result) && (result[endIdx] == '"' || result[endIdx] == '\'') {
+						result = result[:valStart] + replacement + result[endIdx:]
+					} else {
+						result = result[:valStart] + replacement + "\"" + result[endIdx:]
+					}
+				} else {
+					result = result[:valStart] + replacement + result[endIdx:]
+				}
 				searchIdx = valStart + len(replacement) + 1
 			}
 		}

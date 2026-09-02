@@ -81,7 +81,12 @@ func (c *mesheryClient) ListDesigns(ctx context.Context, page, pageSize int, sea
 		return nil, 0, fmt.Errorf("failed to create list_designs request: %w", err)
 	}
 
-	if c.token != "" {
+	// CWE-319 Cleartext Transmission Prevention:
+	// Only attach session credentials over HTTPS or secure loopback connections (localhost / 127.0.0.1)
+	isSecureScheme := u.Scheme == "https"
+	isLoopbackHost := u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1"
+
+	if c.token != "" && (isSecureScheme || isLoopbackHost) {
 		cleanToken := strings.TrimPrefix(c.token, "Bearer ")
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", cleanToken))
 
@@ -103,7 +108,9 @@ func (c *mesheryClient) ListDesigns(ctx context.Context, page, pageSize int, sea
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		// Bound error body reading to 64KB max to prevent memory exhaustion on large upstream responses
+		limitedReader := io.LimitReader(resp.Body, 64*1024)
+		body, _ := io.ReadAll(limitedReader)
 		sanitizedBody := security.SanitizeString(string(body))
 		return nil, 0, fmt.Errorf("meshery API returned status %d: %s", resp.StatusCode, sanitizedBody)
 	}
