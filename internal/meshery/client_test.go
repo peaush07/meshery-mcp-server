@@ -22,7 +22,8 @@ func TestMesheryClient_ListDesigns_QueryStringAndDualCookies(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"total_count": 1, "patterns": [{"id": "p-1", "name": "K8s-Pattern"}]}`))
+		// Meshery Server sends totalCount (PascalCase camelTag matching PatternsAPIResponse)
+		_, _ = w.Write([]byte(`{"totalCount": 15, "patterns": [{"id": "p-1", "name": "K8s-Pattern"}]}`))
 	}))
 	defer ts.Close()
 
@@ -33,8 +34,8 @@ func TestMesheryClient_ListDesigns_QueryStringAndDualCookies(t *testing.T) {
 		t.Fatalf("unexpected error querying ListDesigns: %v", err)
 	}
 
-	if totalCount != 1 {
-		t.Errorf("expected totalCount 1, got %d", totalCount)
+	if totalCount != 15 {
+		t.Errorf("expected totalCount 15 from totalCount tag, got %d", totalCount)
 	}
 
 	if len(designs) != 1 {

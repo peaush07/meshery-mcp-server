@@ -108,8 +108,9 @@ func (c *mesheryClient) ListDesigns(ctx context.Context, page, pageSize int, sea
 		return nil, 0, fmt.Errorf("meshery API returned status %d: %s", resp.StatusCode, sanitizedBody)
 	}
 
+	// Meshery Server server/models/meshery_patterns_api_response.go tags this field as totalCount
 	var payload struct {
-		TotalCount int                      `json:"total_count"`
+		TotalCount int                      `json:"totalCount"`
 		Patterns   []map[string]interface{} `json:"patterns"`
 	}
 
